@@ -1,0 +1,196 @@
+# ansible-playbook -i "192.168.0.42," -e "ansible_ssh_user=admin" --ask-pass --ask-sudo-pass install_cuckoo.yml
+---
+- hosts: all
+  gather_facts: False
+  become: yes
+  vars:
+    cuckoo_user: 'cuckoo'
+    cuckoo_dir: '/opt/cuckoo'
+    build_dir: "/usr/local/src/cuckoo_build"
+    yara_ver: '3.5.0'
+    volatility_ver: '2.6'
+
+  tasks:
+  - name: Install python 2
+    raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
+
+  - name: Create cuckoo user to additional groups
+    user:
+      name: "{{ cuckoo_user }}"
+      shell: /bin/bash
+
+  - name: Create build directory 
+    file:
+      path: "{{ build_dir }}"
+      state: directory
+      owner: "{{ cuckoo_user }}"
+      group: "{{ cuckoo_user }}"
+      mode: 0755
+
+  - name: Install required Ubuntu packages 
+    apt: pkg={{ item }} state=installed update_cache=no
+    with_items:
+      - build-essential
+      - python
+      - python-pip
+      - python-dev
+      - libffi-dev
+      - libssl-dev
+      - libxml2-dev
+      - libxslt1-dev
+      - libjpeg-dev
+      - mongodb
+      - qemu-kvm
+      - libvirt-bin
+      - ubuntu-vm-builder
+      - bridge-utils
+      - python-libvirt
+      - ssdeep
+      - libfuzzy-dev
+
+### Java and Elasticsearch ###
+  - name: Add Java repo to apt sources
+    apt_repository:
+      repo: ppa:webupd8team/java
+      state: present
+      update_cache: no
+
+  - name: Add Elasticsearch apt key
+    apt_key:
+      url: "https://packages.elastic.co/GPG-KEY-elasticsearch"
+      state: present
+
+  - name: Add Elasticsearch repository.
+    apt_repository:
+      repo: deb http://packages.elastic.co/elasticsearch/2.x/debian stable main
+      state: present
+      update_cache: no
+
+  - name: java | Accept Oracle license before JDK installation
+    shell: echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections; echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+    args:
+      creates: /usr/lib/jvm/java-8-oracle
+
+  - name: Install Java
+    apt:
+      name: "oracle-java8-installer"
+      state: present
+      update_cache: yes
+
+  - name: Install elasticsearch
+    apt:
+      name: elasticsearch
+      state: present
+      update_cache: no
+
+  - name: Enable and restart elasticsearch service
+    service: name=elasticsearch state=restarted enabled=yes
+
+### Cuckoo ###
+  - name: Install required Python packages 
+    pip: name={{ item }}
+    with_items:
+      - pyvmomi
+      - pydeep
+
+  - name: Clone Cuckoo
+    git:
+      repo: https://github.com/cuckoosandbox/cuckoo.git
+      dest: "{{ cuckoo_dir }}"
+      recursive: yes
+
+  - name: Change owner of Cuckoo directory
+    file: path={{ cuckoo_dir }} state=directory owner={{ cuckoo_user }} group={{ cuckoo_user }} recurse=yes
+
+  - name: Install Python requirements
+    pip: requirements=requirements.txt chdir={{ cuckoo_dir }}
+
+  - name: Copy local Cuckoo config files to host
+    copy:
+      src: "{{ item }}"
+      dest: "{{ cuckoo_dir }}/conf"
+      owner: "{{ cuckoo_user }}"
+      group: "{{ cuckoo_user }}"
+      mode: 0644
+    with_fileglob:
+      - ./conf_files/*
+
+  - name: Install Cuckoo signature modules
+    become_user: "{{ cuckoo_user }}"
+    shell: "{{ cuckoo_dir }}/utils/community.py --force --rewrite --all"
+
+  - name: Setcap tcpdump binary
+    shell: setcap cap_net_raw,cap_net_admin=eip /usr/sbin/tcpdump
+
+### Yara ###
+  - name: Install Debian packages for building Yara
+    apt: pkg={{ item }} state=installed update_cache=no
+    with_items:
+      - autoconf
+      - libtool
+      - libjansson-dev
+      - libmagic-dev
+
+  - name: Download and uncompress Yara
+    become_user: "{{ cuckoo_user }}"
+    unarchive:
+      src: https://github.com/VirusTotal/yara/archive/v{{ yara_ver }}.zip
+      dest: "{{ build_dir }}"
+      remote_src: True
+
+  - name: Bootstrap Yara
+    become_user: "{{ cuckoo_user }}"
+    shell: ./bootstrap.sh
+    args:
+      chdir: "{{ build_dir }}/yara-{{ yara_ver }}"
+
+  - name: Configure Yara
+    become_user: "{{ cuckoo_user }}"
+    shell: "./configure --enable-cuckoo --enable-magic"
+    args:
+      chdir: "{{ build_dir }}/yara-{{ yara_ver }}"
+
+  - name: Compile Yara
+    become_user: "{{ cuckoo_user }}"
+    shell: make
+    args:
+      chdir: "{{ build_dir }}/yara-{{ yara_ver }}"
+
+  - name: Install Yara
+    shell: make install
+    args:
+      chdir: "{{ build_dir }}/yara-{{ yara_ver }}"
+  
+  - name: Install yara-python 
+    pip: name=yara-python version={{ yara_ver }}
+
+
+### Volatility ###
+  - name: Install required Python packages 
+    pip: name={{ item }}
+    with_items:
+      - distorm3
+      - pycrypto
+
+  - name: Download and uncompress Volatility
+    become_user: "{{ cuckoo_user }}"
+    unarchive:
+      src: http://downloads.volatilityfoundation.org/releases/{{ volatility_ver }}/volatility-{{ volatility_ver }}.zip
+      dest: "{{ build_dir }}"
+      remote_src: True
+
+  - name: Rename Volatility source directory
+    command: mv {{ build_dir }}/volatility-master {{ build_dir }}/volatility-{{ volatility_ver }}
+    args:
+      creates: "{{ build_dir }}/volatility-{{ volatility_ver }}"
+
+  - name: Build Volatility
+    become_user: "{{ cuckoo_user }}"
+    shell: python setup.py build
+    args:
+      chdir: "{{ build_dir }}/volatility-{{ volatility_ver }}"
+
+  - name: Install Volatility
+    shell: python setup.py install
+    args:
+      chdir: "{{ build_dir }}/volatility-{{ volatility_ver }}"
