@@ -2,7 +2,7 @@
 
 This is a simple standalone Ansible script for building a Cuckoo Sandbox server. The following capabilities are included:
 
-- Cuckoo Sandbox (current Git version)
+- Cuckoo Sandbox v2.0RC2 (current version)
 - Web UI
 - Yara v3.5.0
 - Volatility v2.6
@@ -20,7 +20,10 @@ After the base OS install a dist-upgrade was conducted:
 
 `apt-get update & apt-get dist-upgrade`
 
-Now to build the Cuckoo environment:
+
+Installation of the Cuckoo environment is done with the following steps:
+
+Note: This proccess takes about ~6 minutes to complete. 
 
 1. Clone this repository:
 `git clone https://github.com/PingTrip/Ansible_Cuckoo.git`

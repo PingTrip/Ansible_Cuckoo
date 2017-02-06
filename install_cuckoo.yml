@@ -14,7 +14,7 @@
   - name: Install python 2
     raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
 
-  - name: Create cuckoo user to additional groups
+  - name: Create cuckoo user
     user:
       name: "{{ cuckoo_user }}"
       shell: /bin/bash
@@ -87,17 +87,23 @@
     service: name=elasticsearch state=restarted enabled=yes
 
 ### Cuckoo ###
+  - name: Add Cuckoo user to additional groups
+    user:
+      name: "{{ cuckoo_user }}"
+      groups: libvirtd
+      append: yes
+
   - name: Install required Python packages 
     pip: name={{ item }}
     with_items:
       - pyvmomi
       - pydeep
 
-  - name: Clone Cuckoo
-    git:
-      repo: https://github.com/cuckoosandbox/cuckoo.git
-      dest: "{{ cuckoo_dir }}"
-      recursive: yes
+  - name: Download and uncompress Cuckoo
+    unarchive:
+      src: https://downloads.cuckoosandbox.org/cuckoo-current.tar.gz
+      dest: "{{ cuckoo_dir | dirname }}"
+      remote_src: True
 
   - name: Change owner of Cuckoo directory
     file: path={{ cuckoo_dir }} state=directory owner={{ cuckoo_user }} group={{ cuckoo_user }} recurse=yes
