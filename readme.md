@@ -6,6 +6,7 @@ This is a simple standalone Ansible script for building a Cuckoo Sandbox server.
 - Web UI
 - Yara v3.5.0
 - Volatility v2.6
+- Elasticsearch v2.x
 - SSDeep
 - Support for ESX, vSphere and KVM machinery
 
@@ -35,6 +36,15 @@ By default, Cuckoo will be installed to /opt/cuckoo and a cuckoo user will be cr
 
     cuckoo_user: 'cuckoo'
     cuckoo_dir: '/opt/cuckoo'
+
+## Usage
+
+Once the installation has completed run the following as the "cuckoo" user:
+
+    cd /opt/cuckoo/web
+    python manage.py runserver 0.0.0.0:8080 &
+    cd ..
+    ./cuckoo.py
 
 
 
