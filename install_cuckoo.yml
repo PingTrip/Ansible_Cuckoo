@@ -103,6 +103,7 @@
     unarchive:
       src: https://downloads.cuckoosandbox.org/cuckoo-current.tar.gz
       dest: "{{ cuckoo_dir | dirname }}"
+      validate_certs: False
       remote_src: True
 
   - name: Change owner of Cuckoo directory
